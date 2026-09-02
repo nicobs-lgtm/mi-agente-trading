@@ -21,7 +21,7 @@ def consultar_claude(datos_mercado):
         mensaje_usuario = f"Analiza esta situación de mercado que te indico: {datos_mercado}"
 
         respuesta = cliente.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-sonnet-20240229",
             max_tokens=1000,
             system=prompt_sistema,
             messages=[{"role": "user", "content": mensaje_usuario}]
