@@ -22,7 +22,7 @@ def consultar_claude(datos_mercado):
             "content-type": "application/json"
         }
         payload = {
-            "model": "claude-3-5-sonnet-20241022",
+            "model": "claude-3-5-sonnet-20240620",
             "max_tokens": 1000,
             "system": "Eres un analista cuantitativo. Aplica rigurosamente el protocolo de los 7 filtros a los datos que te proporcione el usuario.",
             "messages": [
