@@ -25,7 +25,7 @@ def consultar_claude(datos_mercado):
         }
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 1000,
+            "max_tokens": 2000,
             "system": "Eres un analista cuantitativo. Aplica rigurosamente el protocolo de los 7 filtros a los datos que te proporcione el usuario.",
             "messages": [
                 {"role": "user", "content": f"Analiza esta situación de mercado que te indico: {datos_mercado}"}
