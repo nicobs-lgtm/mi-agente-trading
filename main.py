@@ -14,21 +14,20 @@ def enviar_telegram(mensaje):
     datos = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
     requests.post(url, data=datos)
 
-respuesta = cliente.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=1000,
-            system=prompt_sistema,
-            messages=[{"role": "user", "content": mensaje_usuario}]
-        )
+def consultar_claude(datos_mercado):
+    try:
+        cliente = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+        prompt_sistema = "Eres un analista cuantitativo. Aplica el protocolo de los 7 filtros. Sé riguroso." 
+        mensaje_usuario = f"Analiza esta situación de mercado que te indico: {datos_mercado}"
+
         respuesta = cliente.messages.create(
-            model="claude-3-5-sonnet-latest",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=1000,
             system=prompt_sistema,
             messages=[{"role": "user", "content": mensaje_usuario}]
         )
         return respuesta.content[0].text
     except Exception as e:
-        # Si algo falla con Claude, nos devolverá el error exacto a Telegram
         return f"❌ Error interno al conectar con Claude: {str(e)}"
 
 @app.route('/telegram', methods=['POST'])
