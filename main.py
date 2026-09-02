@@ -14,12 +14,12 @@ def enviar_telegram(mensaje):
     datos = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
     requests.post(url, data=datos)
 
-def consultar_claude(datos_mercado):
-    try:
-        cliente = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
-        prompt_sistema = "Eres un analista cuantitativo. Aplica el protocolo de los 7 filtros. Sé riguroso." 
-        mensaje_usuario = f"Analiza esta situación de mercado que te indico: {datos_mercado}"
-
+respuesta = cliente.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1000,
+            system=prompt_sistema,
+            messages=[{"role": "user", "content": mensaje_usuario}]
+        )
         respuesta = cliente.messages.create(
             model="claude-3-5-sonnet-latest",
             max_tokens=1000,
