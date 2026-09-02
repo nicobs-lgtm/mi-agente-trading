@@ -1,6 +1,5 @@
 import os
 import requests
-import anthropic
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -16,19 +15,31 @@ def enviar_telegram(mensaje):
 
 def consultar_claude(datos_mercado):
     try:
-        cliente = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
-        prompt_sistema = "Eres un analista cuantitativo. Aplica el protocolo de los 7 filtros. Sé riguroso." 
-        mensaje_usuario = f"Analiza esta situación de mercado que te indico: {datos_mercado}"
-
-        respuesta = cliente.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1000,
-            system=prompt_sistema,
-            messages=[{"role": "user", "content": mensaje_usuario}]
-        )
-        return respuesta.content[0].text
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        payload = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 1000,
+            "system": "Eres un analista cuantitativo. Aplica rigurosamente el protocolo de los 7 filtros a los datos que te proporcione el usuario.",
+            "messages": [
+                {"role": "user", "content": f"Analiza esta situación de mercado que te indico: {datos_mercado}"}
+            ]
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        resultado = response.json()
+        
+        if response.status_code == 200:
+            return resultado["content"][0]["text"]
+        else:
+            return f"❌ Error de Anthropic ({response.status_code}): {resultado.get('error', {}).get('message', 'Desconocido')}"
+            
     except Exception as e:
-        return f"❌ Error interno al conectar con Claude: {str(e)}"
+        return f"❌ Error interno crítico: {str(e)}"
 
 @app.route('/telegram', methods=['POST'])
 def recibir_mensaje_telegram():
