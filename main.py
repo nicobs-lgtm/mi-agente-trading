@@ -22,7 +22,7 @@ def consultar_claude(datos_mercado):
             "content-type": "application/json"
         }
         payload = {
-            "model": "sonnet-5",
+            "model": "claude-3-haiku-20240307",
             "max_tokens": 1000,
             "system": "Eres un analista cuantitativo. Aplica rigurosamente el protocolo de los 7 filtros a los datos que te proporcione el usuario.",
             "messages": [
@@ -62,3 +62,4 @@ def inicio():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
+    
