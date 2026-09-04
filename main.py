@@ -16,29 +16,34 @@ def enviar_telegram(mensaje):
     requests.post(url, data=datos)
 
 def extraer_ticker_del_texto(texto):
-    """Mapeo rápido de nombres comunes a Tickers de bolsa"""
-    texto = texto.lower()
-    if "tesla" in texto or "tsla" in texto:
+    texto_lower = texto.lower()
+    
+    # Mapeo de nombres comunes
+    if "tesla" in texto_lower or "tsla" in texto_lower:
         return "TSLA"
-    elif "gilead" in texto or "gild" in texto:
+    elif "gilead" in texto_lower or "gild" in texto_lower:
         return "GILD"
-    elif "apple" in texto or "aapl" in texto:
+    elif "lululemon" in texto_lower or "lulu" in texto_lower:
+        return "LULU"
+    elif "apple" in texto_lower or "aapl" in texto_lower:
         return "AAPL"
-    elif "nvidia" in texto or "nvda" in texto:
+    elif "nvidia" in texto_lower or "nvda" in texto_lower:
         return "NVDA"
-    elif "microsoft" in texto or "msft" in texto:
+    elif "microsoft" in texto_lower or "msft" in texto_lower:
         return "MSFT"
-    # Si escriben directamente el ticker en mayúsculas (ej: "GOOG")
+        
+    # Detectar cualquier ticker escrito en mayúsculas en el texto original
     palabras = texto.split()
     for palabra in palabras:
-        if len(palabra) <= 5 and palabra.isupper():
-            return palabra
+        palabra_limpia = palabra.strip(",.!?")
+        if 1 <= len(palabra_limpia) <= 5 and palabra_limpia.isupper():
+            return palabra_limpia
+            
     return None
 
 def obtener_datos_mercado(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
-        # Descargar histórico de los últimos 6 meses para calcular indicadores
         df = stock.history(period="6mo")
         
         if df.empty:
@@ -48,10 +53,8 @@ def obtener_datos_mercado(ticker_symbol):
         volumen_actual = df['Volume'].iloc[-1]
         volumen_medio = df['Volume'].rolling(window=20).mean().iloc[-1]
         
-        # Calcular Media Móvil de 200 sesiones (o la máxima disponible)
         ma_200 = df['Close'].rolling(window=200).mean().iloc[-1] if len(df) >= 200 else df['Close'].mean()
         
-        # Calcular RSI básico de 14 periodos
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -126,7 +129,7 @@ def recibir_mensaje_telegram():
                     analisis = consultar_claude(datos_tecnicos)
                     enviar_telegram(analisis)
             else:
-                enviar_telegram("⚠️ No he reconocido el activo. Prueba a escribir algo como: *'Analiza Gilead'* o *'Mira Tesla'*.")
+                enviar_telegram("⚠️ No he reconocido el activo. Prueba a escribir algo como: *'Analiza Gilead'*, *'Mira LULU'* o pon el ticker directo (ej: *TSLA*).")
             
     return "OK", 200
 
