@@ -11,33 +11,31 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    datos = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
-    requests.post(url, data=datos)
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        datos = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
+        requests.post(url, data=datos, timeout=5)
+    except Exception as e:
+        print(f"Error enviando mensaje a Telegram: {e}")
 
 def extraer_ticker_del_texto(texto):
-    texto_lower = texto.lower()
-    
-    # Mapeo de nombres comunes
-    if "tesla" in texto_lower or "tsla" in texto_lower:
-        return "TSLA"
-    elif "gilead" in texto_lower or "gild" in texto_lower:
-        return "GILD"
-    elif "lululemon" in texto_lower or "lulu" in texto_lower:
-        return "LULU"
-    elif "apple" in texto_lower or "aapl" in texto_lower:
-        return "AAPL"
-    elif "nvidia" in texto_lower or "nvda" in texto_lower:
-        return "NVDA"
-    elif "microsoft" in texto_lower or "msft" in texto_lower:
-        return "MSFT"
-        
-    # Detectar cualquier ticker escrito en mayúsculas en el texto original
+    """
+    Busca cualquier ticker válido en el texto. 
+    Detecta palabras en mayúsculas (ej: LULU, AAPL, NVDA, TSLA) o coge la última palabra.
+    """
     palabras = texto.split()
+    
+    # 1. Buscar si hay alguna palabra en mayúsculas de entre 1 y 5 letras (ej: LULU, SPY)
     for palabra in palabras:
-        palabra_limpia = palabra.strip(",.!?")
-        if 1 <= len(palabra_limpia) <= 5 and palabra_limpia.isupper():
+        palabra_limpia = palabra.strip(",.!?").upper()
+        if 1 <= len(palabra_limpia) <= 5 and palabra_limpia.isalpha() and palabra_limpia not in ["MIRA", "ANALIZA", "HOY", "QUE", "POR"]:
             return palabra_limpia
+            
+    # 2. Si no encuentra ninguna en mayúsculas, coge la última palabra del mensaje por si acaso
+    if palabras:
+        ultima_palabra = palabras[-1].strip(",.!?").upper()
+        if len(ultima_palabra) <= 5 and ultima_palabra.isalpha():
+            return ultima_palabra
             
     return None
 
@@ -46,8 +44,8 @@ def obtener_datos_mercado(ticker_symbol):
         stock = yf.Ticker(ticker_symbol)
         df = stock.history(period="6mo")
         
-        if df.empty:
-            return None, "No se encontraron datos para ese activo."
+        if df is None or df.empty:
+            return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'. Comprueba que esté bien escrito."
             
         precio_actual = df['Close'].iloc[-1]
         volumen_actual = df['Volume'].iloc[-1]
@@ -96,7 +94,7 @@ def consultar_claude(datos_mercado):
             ]
         }
         
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
         resultado = response.json()
         
         if response.status_code == 200:
@@ -104,6 +102,8 @@ def consultar_claude(datos_mercado):
         else:
             return f"❌ Error de Anthropic ({response.status_code}): {resultado.get('error', {}).get('message', 'Desconocido')}"
             
+    except requests.exceptions.Timeout:
+        return "❌ Error: La IA tardó demasiado en responder y la conexión expiró."
     except Exception as e:
         return f"❌ Error interno crítico: {str(e)}"
 
@@ -123,19 +123,19 @@ def recibir_mensaje_telegram():
                 datos_tecnicos, error = obtener_datos_mercado(ticker)
                 
                 if error:
-                    enviar_telegram(f"❌ No pude obtener datos de {ticker}: {error}")
+                    enviar_telegram(f"❌ {error}")
                 else:
                     enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
                     analisis = consultar_claude(datos_tecnicos)
                     enviar_telegram(analisis)
             else:
-                enviar_telegram("⚠️ No he reconocido el activo. Prueba a escribir algo como: *'Analiza Gilead'*, *'Mira LULU'* o pon el ticker directo (ej: *TSLA*).")
+                enviar_telegram("⚠️ No he detectado ningún ticker válido. Escribe el símbolo en mayúsculas, por ejemplo: *'Analiza NVDA'* o *'LULU'*.")
             
     return "OK", 200
 
 @app.route('/')
 def inicio():
-    return "¡El bot con auto-fetch y trading cuantitativo está encendido!"
+    return "¡El bot abierto a cualquier activo del mercado está encendido!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
