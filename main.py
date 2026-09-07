@@ -76,7 +76,7 @@ def consultar_claude(datos_mercado):
             "content-type": "application/json"
         }
         payload = {
-            "model": "claude-3-haiku-20240307",
+            "model": "claude-haiku-4-5-20251001",
             "max_tokens": 1500,
             "system": (
                 "Eres un analista cuantitativo senior y trader institucional. "
@@ -104,15 +104,20 @@ def consultar_claude(datos_mercado):
         return f"❌ Error interno crítico: {str(e)}"
 
 def procesar_analisis_en_segundo_plan(ticker):
-    enviar_telegram(f"🔍 *Buscando datos de mercado en tiempo real para {ticker}...*")
-    datos_tecnicos, error = obtener_datos_mercado(ticker)
-    
-    if error:
-        enviar_telegram(f"❌ {error}")
-    else:
-        enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
-        analisis = consultar_claude(datos_tecnicos)
-        enviar_telegram(analisis)
+    try:
+        enviar_telegram(f"🔍 *Buscando datos de mercado en tiempo real para {ticker}...*")
+        datos_tecnicos, error = obtener_datos_mercado(ticker)
+
+        if error:
+            enviar_telegram(f"❌ {error}")
+        else:
+            enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
+            analisis = consultar_claude(datos_tecnicos)
+            enviar_telegram(analisis)
+    except Exception as e:
+        # Red de seguridad: si algo falla dentro del hilo, avisamos en vez de
+        # dejar el chat "colgado" sin respuesta.
+        enviar_telegram(f"❌ Error inesperado procesando el análisis: {str(e)}")
 
 @app.route('/telegram', methods=['POST'])
 def recibir_mensaje_telegram():
@@ -139,4 +144,4 @@ def inicio():
     return "¡El bot asíncrono con hilos está encendido!"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080, threaded=True)
