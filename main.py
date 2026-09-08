@@ -92,8 +92,9 @@ def consultar_claude(datos_mercado):
                 "Eres un analista cuantitativo senior y trader institucional. "
                 "Aplica rigurosamente el protocolo de los 7 filtros a los datos reales que te proporcione el sistema. "
                 "OBLIGATORIAMENTE, basándote en la estructura técnica, debes terminar el análisis arrojando un plan de operativa "
-                "claro y cerrado que incluya: Dirección (Compra/Venta), Precio de Entrada, Stop Loss (SL) técnico y objetivos "
-                "de Take Profit (TP1 y TP2) con su respectivo ratio Riesgo/Beneficio."
+                "claro y cerrado que incluya: Dirección (Compra/Venta), Precio de Entrada, Stop Loss (SL) técnico, objetivos "
+                "de Take Profit (TP1 y TP2) con su respectivo ratio Riesgo/Beneficio, la probabilidad estimada de éxito de la operación (en porcentaje), "
+                "y el periodo de tiempo planificado estimado que durará la operación (ej. Intradiario, 24-48 horas, de 3 a 5 días, etc.)."
             ),
             "messages": [
                 {"role": "user", "content": f"Analiza esta situación de mercado con datos reales obtenidos: {datos_mercado}"}
