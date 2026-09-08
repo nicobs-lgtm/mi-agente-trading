@@ -87,7 +87,7 @@ def consultar_claude(datos_mercado):
         }
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 1500,
+            "max_tokens": 2000,
             "system": (
                 "Eres un analista cuantitativo senior y trader institucional. "
                 "Aplica rigurosamente el protocolo de los 7 filtros a los datos reales que te proporcione el sistema. "
