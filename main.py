@@ -1,9 +1,6 @@
 import os
 import requests
-import yfinance as yf
-import pandas as pd
 import threading
-from curl_cffi import requests as cffi_requests
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -11,11 +8,7 @@ app = Flask(__name__)
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-# Sesión que imita un navegador real (Chrome) para evitar el bloqueo 429
-# ("crumb rate-limited") que Yahoo Finance aplica a las IPs compartidas
-# de hostings como Render. Se reutiliza la misma sesión en cada petición.
-YF_SESSION = cffi_requests.Session(impersonate="chrome")
+TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")
 
 
 def enviar_telegram(mensaje):
@@ -42,36 +35,47 @@ def extraer_ticker_del_texto(texto):
     return None
 
 
+def _pedir_twelvedata(endpoint, params):
+    """Llama a un endpoint de Twelve Data y devuelve el JSON, o lanza excepción con el mensaje de error de la API."""
+    params = dict(params)
+    params["apikey"] = TWELVEDATA_API_KEY
+    resp = requests.get(f"https://api.twelvedata.com/{endpoint}", params=params, timeout=15)
+    data = resp.json()
+    if isinstance(data, dict) and data.get("status") == "error":
+        raise Exception(data.get("message", "Error desconocido de Twelve Data"))
+    return data
+
+
 def obtener_datos_mercado(ticker_symbol):
     try:
-        stock = yf.Ticker(ticker_symbol, session=YF_SESSION)
-        df = stock.history(period="3mo")
-
-        if df is None or df.empty:
+        # 1) Precio y volumen actuales
+        cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol})
+        if "close" not in cotizacion:
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
 
-        precio_actual = df['Close'].iloc[-1]
-        volumen_actual = df['Volume'].iloc[-1]
-        volumen_medio = df['Volume'].rolling(window=20).mean().iloc[-1]
+        precio_actual = float(cotizacion["close"])
+        volumen_actual = float(cotizacion.get("volume", 0) or 0)
+        volumen_medio_10d = float(cotizacion.get("average_volume", 0) or 0)
 
-        ma_200 = df['Close'].mean()
-        if len(df) >= 50:
-            ma_200 = df['Close'].rolling(window=min(50, len(df))).mean().iloc[-1]
+        # 2) Media móvil (SMA 50) calculada directamente por Twelve Data
+        sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "interval": "1day", "time_period": 50, "outputsize": 1})
+        ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        rsi_actual = rsi.iloc[-1] if not rsi.empty else 50.0
+        # 3) RSI (14) calculado directamente por Twelve Data
+        rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "interval": "1day", "time_period": 14, "outputsize": 1})
+        rsi_actual = float(rsi_resp["values"][0]["rsi"]) if rsi_resp.get("values") else None
+
+        texto_ma_50 = f"${ma_50:.2f}" if ma_50 is not None else "N/D"
+        texto_rsi = f"{rsi_actual:.1f}" if rsi_actual is not None else "N/D"
 
         info_resumida = (
             f"Activo: {ticker_symbol.upper()}\n"
             f"Precio actual: ${precio_actual:.2f}\n"
-            f"Media Móvil de referencia: ${ma_200:.2f}\n"
-            f"RSI (14): {rsi_actual:.1f}\n"
-            f"Volumen actual vs Medio (20d): {volumen_actual:,.0f} vs {volumen_medio:,.0f}"
+            f"Media Móvil (50): {texto_ma_50}\n"
+            f"RSI (14): {texto_rsi}\n"
+            f"Volumen actual vs Medio (10d): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
         )
+
         return info_resumida, None
     except Exception as e:
         return None, str(e)
