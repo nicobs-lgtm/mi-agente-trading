@@ -102,19 +102,15 @@ def obtener_datos_mercado(ticker_symbol):
         texto_rsi = f"{rsi_actual:.1f}" if rsi_actual is not None else "N/D"
         texto_mercado = "ABIERTO ahora mismo (sesión en curso)" if mercado_abierto else "CERRADO en este momento"
 
-        linea_volumen_hoy = ""
-        if mercado_abierto and indice_ultimo_dia_cerrado == 1:
-            volumen_hoy_parcial = float(velas[0]["volume"])
-            linea_volumen_hoy = f"\nVolumen de HOY hasta ahora (INCOMPLETO, sesión sin cerrar): {volumen_hoy_parcial:,.0f}"
-
         info_resumida = (
             f"Activo: {ticker_symbol.upper()}\n"
             f"Estado del mercado: {texto_mercado}\n"
             f"Precio actual: ${precio_actual:.2f}\n"
             f"Media Móvil (50): {texto_ma_50}\n"
             f"RSI (14): {texto_rsi}\n"
-            f"Volumen [{etiqueta_volumen}] vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
-            f"{linea_volumen_hoy}"
+            f"Volumen [{etiqueta_volumen}] vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}\n"
+            f"Nota: no se incluye el volumen de la sesión en curso porque el plan gratuito de datos "
+            f"no lo da consolidado entre mercados y no es comparable ni fiable hasta el cierre del día."
         )
 
         return info_resumida, None
@@ -167,7 +163,7 @@ def procesar_analisis_en_segundo_plan(ticker):
 
         print(f"[{ticker}] Pidiendo datos a Twelve Data...")
         datos_tecnicos, error = obtener_datos_mercado(ticker)
-        print(f"[{ticker}] Twelve Data respondió. Error: {error}")
+        print(f"[{ticker}] Twelve Data respondió. ¿Falló?: {'Sí -> ' + error if error else 'No, todo OK'}")
 
         if error:
             enviar_telegram(f"❌ {error}")
