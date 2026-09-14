@@ -48,7 +48,7 @@ def _pedir_twelvedata(endpoint, params):
 
 def obtener_datos_mercado(ticker_symbol):
     try:
-        # 1) Precio y volumen actuales
+        # 1) Precio actual (de /quote, en tiempo real)
         print(f"[{ticker_symbol}] -> pidiendo /quote")
         cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "exchange": "NASDAQ"})
         print(f"[{ticker_symbol}] <- /quote OK")
@@ -56,16 +56,34 @@ def obtener_datos_mercado(ticker_symbol):
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
 
         precio_actual = float(cotizacion["close"])
-        volumen_actual = float(cotizacion.get("volume", 0) or 0)
-        volumen_medio_10d = float(cotizacion.get("average_volume", 0) or 0)
 
-        # 2) Media móvil (SMA 50) calculada directamente por Twelve Data
+        # 2) Volumen: usamos /time_series con velas DIARIAS CERRADAS en vez de /quote,
+        # porque el volumen de /quote parece corresponder a una sesión parcial y no
+        # es comparable con el volumen diario que muestran fuentes como Yahoo Finance.
+        print(f"[{ticker_symbol}] -> pidiendo /time_series (volumen)")
+        series_resp = _pedir_twelvedata("time_series", {
+            "symbol": ticker_symbol, "exchange": "NASDAQ",
+            "interval": "1day", "outputsize": 11
+        })
+        print(f"[{ticker_symbol}] <- /time_series OK")
+
+        velas = series_resp.get("values", [])
+        if not velas:
+            return None, f"No se han encontrado velas diarias para '{ticker_symbol}'."
+
+        # values[0] es la vela más reciente (puede ser la sesión de hoy, aún en curso)
+        volumen_actual = float(velas[0]["volume"])
+        # Las siguientes 10 son días completos y cerrados -> media fiable
+        volumenes_previos = [float(v["volume"]) for v in velas[1:11]]
+        volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
+
+        # 3) Media móvil (SMA 50) calculada directamente por Twelve Data
         print(f"[{ticker_symbol}] -> pidiendo /sma")
         sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 50, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
-        # 3) RSI (14) calculado directamente por Twelve Data
+        # 4) RSI (14) calculado directamente por Twelve Data
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
         rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 14, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /rsi OK")
@@ -79,7 +97,7 @@ def obtener_datos_mercado(ticker_symbol):
             f"Precio actual: ${precio_actual:.2f}\n"
             f"Media Móvil (50): {texto_ma_50}\n"
             f"RSI (14): {texto_rsi}\n"
-            f"Volumen actual vs Medio (10d): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
+            f"Volumen (última vela diaria) vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
         )
 
         return info_resumida, None
