@@ -50,7 +50,7 @@ def obtener_datos_mercado(ticker_symbol):
     try:
         # 1) Precio y volumen actuales
         print(f"[{ticker_symbol}] -> pidiendo /quote")
-        cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol})
+        cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "exchange": "NASDAQ"})
         print(f"[{ticker_symbol}] <- /quote OK")
         if "close" not in cotizacion:
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
@@ -61,13 +61,13 @@ def obtener_datos_mercado(ticker_symbol):
 
         # 2) Media móvil (SMA 50) calculada directamente por Twelve Data
         print(f"[{ticker_symbol}] -> pidiendo /sma")
-        sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "interval": "1day", "time_period": 50, "outputsize": 1})
+        sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 50, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
         # 3) RSI (14) calculado directamente por Twelve Data
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
-        rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "interval": "1day", "time_period": 14, "outputsize": 1})
+        rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 14, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /rsi OK")
         rsi_actual = float(rsi_resp["values"][0]["rsi"]) if rsi_resp.get("values") else None
 
