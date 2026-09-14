@@ -14,8 +14,21 @@ TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")
 def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        datos = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
-        requests.post(url, data=datos, timeout=5)
+        
+        # Si el mensaje es muy largo (más de 4000 caracteres), Telegram lo rechaza. 
+        # Lo partimos en trozos seguros de 4000 caracteres.
+        limite = 4000
+        trozos = [mensaje[i:i+limite] for i in range(0, len(mensaje), limite)]
+        
+        for parte in trozos:
+            datos = {"chat_id": TELEGRAM_CHAT_ID, "text": parte, "parse_mode": "Markdown"}
+            resp = requests.post(url, data=datos, timeout=10)
+            
+            # Si falla el Markdown por caracteres especiales, lo enviamos como texto plano (sin parse_mode)
+            if resp.status_code != 200:
+                datos_plano = {"chat_id": TELEGRAM_CHAT_ID, "text": parte}
+                requests.post(url, data=datos_plano, timeout=10)
+                
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
@@ -36,7 +49,6 @@ def extraer_ticker_del_texto(texto):
 
 
 def _pedir_twelvedata(endpoint, params):
-    """Llama a un endpoint de Twelve Data y devuelve el JSON, o lanza excepción con el mensaje de error de la API."""
     params = dict(params)
     params["apikey"] = TWELVEDATA_API_KEY
     resp = requests.get(f"https://api.twelvedata.com/{endpoint}", params=params, timeout=15)
@@ -48,7 +60,6 @@ def _pedir_twelvedata(endpoint, params):
 
 def obtener_datos_mercado(ticker_symbol):
     try:
-        # 1) Precio actual (de /quote, en tiempo real)
         print(f"[{ticker_symbol}] -> pidiendo /quote")
         cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "exchange": "NASDAQ"})
         print(f"[{ticker_symbol}] <- /quote OK")
@@ -57,7 +68,6 @@ def obtener_datos_mercado(ticker_symbol):
 
         precio_actual = float(cotizacion["close"])
 
-        # 2) Volumen: usamos /time_series con velas DIARIAS CERRADAS
         print(f"[{ticker_symbol}] -> pidiendo /time_series (volumen)")
         series_resp = _pedir_twelvedata("time_series", {
             "symbol": ticker_symbol, "exchange": "NASDAQ",
@@ -80,13 +90,11 @@ def obtener_datos_mercado(ticker_symbol):
         volumenes_previos = [float(v["volume"]) for v in velas[inicio_previos:inicio_previos + 10]]
         volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
 
-        # 3) Media móvil (SMA 50)
         print(f"[{ticker_symbol}] -> pidiendo /sma")
         sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 50, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
-        # 4) RSI (14)
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
         rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 14, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /rsi OK")
@@ -120,7 +128,7 @@ def consultar_claude(datos_mercado):
         }
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 2000,
+            "max_tokens": 1500,  # Reducimos ligeramente para que no supere los límites de Telegram
             "system": (
                 "Eres un analista cuantitativo senior y trader institucional. "
                 "Aplica rigurosamente el protocolo de los 7 filtros a los datos reales que te proporcione el sistema. "
@@ -153,24 +161,17 @@ def procesar_analisis_en_segundo_plan(ticker):
         print(f"[{ticker}] Iniciando análisis...")
         enviar_telegram(f"🔍 *Buscando datos de mercado en tiempo real para {ticker}...*")
 
-        print(f"[{ticker}] Pidiendo datos a Twelve Data...")
         datos_tecnicos, error = obtener_datos_mercado(ticker)
-        print(f"[{ticker}] Twelve Data respondió. ¿Falló?: {'Sí -> ' + error if error else 'No, todo OK'}")
 
         if error:
             enviar_telegram(f"❌ {error}")
         else:
             enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
-
-            print(f"[{ticker}] Llamando a Claude...")
             analisis = consultar_claude(datos_tecnicos)
-            print(f"[{ticker}] Claude respondió ({len(analisis)} caracteres).")
-
             enviar_telegram(analisis)
-            print(f"[{ticker}] Análisis enviado a Telegram. Proceso completado.")
+            print(f"[{ticker}] Análisis enviado a Telegram con éxito.")
     except Exception as e:
         import traceback
-        print(f"[{ticker}] EXCEPCIÓN en el hilo: {e}")
         traceback.print_exc()
         enviar_telegram(f"❌ Error inesperado procesando el análisis: {str(e)}")
 
@@ -197,7 +198,7 @@ def recibir_mensaje_telegram():
 
 @app.route('/')
 def inicio():
-    return "¡El bot asíncrono con hilos está encendido!"
+    return "¡El bot asíncrono con partición de mensajes está encendido!"
 
 
 if __name__ == '__main__':
