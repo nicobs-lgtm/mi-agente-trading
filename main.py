@@ -57,9 +57,7 @@ def obtener_datos_mercado(ticker_symbol):
 
         precio_actual = float(cotizacion["close"])
 
-        # 2) Volumen: usamos /time_series con velas DIARIAS CERRADAS en vez de /quote,
-        # porque el volumen de /quote parece corresponder a una sesión parcial y no
-        # es comparable con el volumen diario que muestran fuentes como Yahoo Finance.
+        # 2) Volumen: usamos /time_series con velas DIARIAS CERRADAS
         print(f"[{ticker_symbol}] -> pidiendo /time_series (volumen)")
         series_resp = _pedir_twelvedata("time_series", {
             "symbol": ticker_symbol, "exchange": "NASDAQ",
@@ -71,9 +69,6 @@ def obtener_datos_mercado(ticker_symbol):
         if not velas:
             return None, f"No se han encontrado velas diarias para '{ticker_symbol}'."
 
-        # values[0] puede ser la sesión de HOY, aún en curso (volumen parcial,
-        # siempre parece artificialmente bajo comparado con días completos).
-        # Por eso usamos como referencia el último día YA CERRADO: values[1].
         mercado_abierto = bool(cotizacion.get("is_market_open"))
         indice_ultimo_dia_cerrado = 1 if (mercado_abierto and len(velas) > 1) else 0
 
@@ -81,18 +76,17 @@ def obtener_datos_mercado(ticker_symbol):
         fecha_volumen = velas[indice_ultimo_dia_cerrado]["datetime"]
         etiqueta_volumen = f"Último día cerrado ({fecha_volumen})" if indice_ultimo_dia_cerrado == 1 else f"Hoy en curso ({fecha_volumen})"
 
-        # Media de los 10 días completos anteriores a ese
         inicio_previos = indice_ultimo_dia_cerrado + 1
         volumenes_previos = [float(v["volume"]) for v in velas[inicio_previos:inicio_previos + 10]]
         volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
 
-        # 3) Media móvil (SMA 50) calculada directamente por Twelve Data
+        # 3) Media móvil (SMA 50)
         print(f"[{ticker_symbol}] -> pidiendo /sma")
         sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 50, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
-        # 4) RSI (14) calculado directamente por Twelve Data
+        # 4) RSI (14)
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
         rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 14, "outputsize": 1})
         print(f"[{ticker_symbol}] <- /rsi OK")
@@ -109,8 +103,6 @@ def obtener_datos_mercado(ticker_symbol):
             f"Media Móvil (50): {texto_ma_50}\n"
             f"RSI (14): {texto_rsi}\n"
             f"Volumen [{etiqueta_volumen}] vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}\n"
-            f"Nota: no se incluye el volumen de la sesión en curso porque el plan gratuito de datos "
-            f"no lo da consolidado entre mercados y no es comparable ni fiable hasta el cierre del día."
         )
 
         return info_resumida, None
@@ -180,8 +172,6 @@ def procesar_analisis_en_segundo_plan(ticker):
         import traceback
         print(f"[{ticker}] EXCEPCIÓN en el hilo: {e}")
         traceback.print_exc()
-        # Red de seguridad: si algo falla dentro del hilo, avisamos en vez de
-        # dejar el chat "colgado" sin respuesta.
         enviar_telegram(f"❌ Error inesperado procesando el análisis: {str(e)}")
 
 
@@ -197,7 +187,6 @@ def recibir_mensaje_telegram():
             ticker = extraer_ticker_del_texto(texto_usuario)
 
             if ticker:
-                # Lanzamos el proceso en segundo plano para liberar a Flask de inmediato
                 hilo = threading.Thread(target=procesar_analisis_en_segundo_plan, args=(ticker,))
                 hilo.start()
             else:
