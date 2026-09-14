@@ -71,10 +71,18 @@ def obtener_datos_mercado(ticker_symbol):
         if not velas:
             return None, f"No se han encontrado velas diarias para '{ticker_symbol}'."
 
-        # values[0] es la vela más reciente (puede ser la sesión de hoy, aún en curso)
-        volumen_actual = float(velas[0]["volume"])
-        # Las siguientes 10 son días completos y cerrados -> media fiable
-        volumenes_previos = [float(v["volume"]) for v in velas[1:11]]
+        # values[0] puede ser la sesión de HOY, aún en curso (volumen parcial,
+        # siempre parece artificialmente bajo comparado con días completos).
+        # Por eso usamos como referencia el último día YA CERRADO: values[1].
+        mercado_abierto = bool(cotizacion.get("is_market_open"))
+        indice_ultimo_dia_cerrado = 1 if (mercado_abierto and len(velas) > 1) else 0
+
+        volumen_actual = float(velas[indice_ultimo_dia_cerrado]["volume"])
+        etiqueta_volumen = "Último día cerrado" if indice_ultimo_dia_cerrado == 1 else "Hoy (sesión en curso)"
+
+        # Media de los 10 días completos anteriores a ese
+        inicio_previos = indice_ultimo_dia_cerrado + 1
+        volumenes_previos = [float(v["volume"]) for v in velas[inicio_previos:inicio_previos + 10]]
         volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
 
         # 3) Media móvil (SMA 50) calculada directamente por Twelve Data
@@ -91,13 +99,15 @@ def obtener_datos_mercado(ticker_symbol):
 
         texto_ma_50 = f"${ma_50:.2f}" if ma_50 is not None else "N/D"
         texto_rsi = f"{rsi_actual:.1f}" if rsi_actual is not None else "N/D"
+        texto_mercado = "ABIERTO ahora mismo (sesión en curso)" if mercado_abierto else "CERRADO en este momento"
 
         info_resumida = (
             f"Activo: {ticker_symbol.upper()}\n"
+            f"Estado del mercado: {texto_mercado}\n"
             f"Precio actual: ${precio_actual:.2f}\n"
             f"Media Móvil (50): {texto_ma_50}\n"
             f"RSI (14): {texto_rsi}\n"
-            f"Volumen (última vela diaria) vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
+            f"Volumen [{etiqueta_volumen}] vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
         )
 
         return info_resumida, None
