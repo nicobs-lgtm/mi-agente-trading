@@ -49,7 +49,9 @@ def _pedir_twelvedata(endpoint, params):
 def obtener_datos_mercado(ticker_symbol):
     try:
         # 1) Precio y volumen actuales
+        print(f"[{ticker_symbol}] -> pidiendo /quote")
         cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol})
+        print(f"[{ticker_symbol}] <- /quote OK")
         if "close" not in cotizacion:
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
 
@@ -58,11 +60,15 @@ def obtener_datos_mercado(ticker_symbol):
         volumen_medio_10d = float(cotizacion.get("average_volume", 0) or 0)
 
         # 2) Media móvil (SMA 50) calculada directamente por Twelve Data
+        print(f"[{ticker_symbol}] -> pidiendo /sma")
         sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "interval": "1day", "time_period": 50, "outputsize": 1})
+        print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
         # 3) RSI (14) calculado directamente por Twelve Data
+        print(f"[{ticker_symbol}] -> pidiendo /rsi")
         rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "interval": "1day", "time_period": 14, "outputsize": 1})
+        print(f"[{ticker_symbol}] <- /rsi OK")
         rsi_actual = float(rsi_resp["values"][0]["rsi"]) if rsi_resp.get("values") else None
 
         texto_ma_50 = f"${ma_50:.2f}" if ma_50 is not None else "N/D"
@@ -121,16 +127,28 @@ def consultar_claude(datos_mercado):
 
 def procesar_analisis_en_segundo_plan(ticker):
     try:
+        print(f"[{ticker}] Iniciando análisis...")
         enviar_telegram(f"🔍 *Buscando datos de mercado en tiempo real para {ticker}...*")
+
+        print(f"[{ticker}] Pidiendo datos a Twelve Data...")
         datos_tecnicos, error = obtener_datos_mercado(ticker)
+        print(f"[{ticker}] Twelve Data respondió. Error: {error}")
 
         if error:
             enviar_telegram(f"❌ {error}")
         else:
             enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
+
+            print(f"[{ticker}] Llamando a Claude...")
             analisis = consultar_claude(datos_tecnicos)
+            print(f"[{ticker}] Claude respondió ({len(analisis)} caracteres).")
+
             enviar_telegram(analisis)
+            print(f"[{ticker}] Análisis enviado a Telegram. Proceso completado.")
     except Exception as e:
+        import traceback
+        print(f"[{ticker}] EXCEPCIÓN en el hilo: {e}")
+        traceback.print_exc()
         # Red de seguridad: si algo falla dentro del hilo, avisamos en vez de
         # dejar el chat "colgado" sin respuesta.
         enviar_telegram(f"❌ Error inesperado procesando el análisis: {str(e)}")
