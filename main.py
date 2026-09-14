@@ -78,7 +78,8 @@ def obtener_datos_mercado(ticker_symbol):
         indice_ultimo_dia_cerrado = 1 if (mercado_abierto and len(velas) > 1) else 0
 
         volumen_actual = float(velas[indice_ultimo_dia_cerrado]["volume"])
-        etiqueta_volumen = "Último día cerrado" if indice_ultimo_dia_cerrado == 1 else "Hoy (sesión en curso)"
+        fecha_volumen = velas[indice_ultimo_dia_cerrado]["datetime"]
+        etiqueta_volumen = f"Último día cerrado ({fecha_volumen})" if indice_ultimo_dia_cerrado == 1 else f"Hoy en curso ({fecha_volumen})"
 
         # Media de los 10 días completos anteriores a ese
         inicio_previos = indice_ultimo_dia_cerrado + 1
@@ -101,6 +102,11 @@ def obtener_datos_mercado(ticker_symbol):
         texto_rsi = f"{rsi_actual:.1f}" if rsi_actual is not None else "N/D"
         texto_mercado = "ABIERTO ahora mismo (sesión en curso)" if mercado_abierto else "CERRADO en este momento"
 
+        linea_volumen_hoy = ""
+        if mercado_abierto and indice_ultimo_dia_cerrado == 1:
+            volumen_hoy_parcial = float(velas[0]["volume"])
+            linea_volumen_hoy = f"\nVolumen de HOY hasta ahora (INCOMPLETO, sesión sin cerrar): {volumen_hoy_parcial:,.0f}"
+
         info_resumida = (
             f"Activo: {ticker_symbol.upper()}\n"
             f"Estado del mercado: {texto_mercado}\n"
@@ -108,6 +114,7 @@ def obtener_datos_mercado(ticker_symbol):
             f"Media Móvil (50): {texto_ma_50}\n"
             f"RSI (14): {texto_rsi}\n"
             f"Volumen [{etiqueta_volumen}] vs Medio (10d cerrados): {volumen_actual:,.0f} vs {volumen_medio_10d:,.0f}"
+            f"{linea_volumen_hoy}"
         )
 
         return info_resumida, None
