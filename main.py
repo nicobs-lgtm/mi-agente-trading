@@ -17,7 +17,7 @@ def enviar_telegram(mensaje):
         
         # Si el mensaje es muy largo (más de 6000 caracteres), Telegram lo rechaza. 
         # Lo partimos en trozos seguros de 6000 caracteres.
-        limite = 6500
+        limite = 8500
         trozos = [mensaje[i:i+limite] for i in range(0, len(mensaje), limite)]
         
         for parte in trozos:
