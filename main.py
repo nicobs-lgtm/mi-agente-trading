@@ -15,9 +15,9 @@ def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         
-        # Si el mensaje es muy largo (más de 6000 caracteres), Telegram lo rechaza. 
-        # Lo partimos en trozos seguros de 6000 caracteres.
-        limite = 8500
+        # Si el mensaje es muy largo (más de 10000 caracteres), Telegram lo rechaza. 
+        # Lo partimos en trozos seguros de 1000 caracteres.
+        limite = 10500
         trozos = [mensaje[i:i+limite] for i in range(0, len(mensaje), limite)]
         
         for parte in trozos:
