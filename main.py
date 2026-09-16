@@ -15,15 +15,15 @@ def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         
-        # Partimos el mensaje en bloques de 4000 caracteres para evitar el límite de Telegram
-        limite = 6000
+        # CORREGIDO: Límite seguro por debajo de los 4096 caracteres permitidos por Telegram
+        limite = 3900
         trozos = [mensaje[i:i+limite] for i in range(0, len(mensaje), limite)]
         
         for parte in trozos:
             datos = {"chat_id": TELEGRAM_CHAT_ID, "text": parte, "parse_mode": "Markdown"}
             resp = requests.post(url, data=datos, timeout=10)
             
-            # Si falla por caracteres de Markdown mal formados, lo enviamos en texto plano
+            # Si falla por formato Markdown, se reenvía en texto plano
             if resp.status_code != 200:
                 datos_plano = {"chat_id": TELEGRAM_CHAT_ID, "text": parte}
                 requests.post(url, data=datos_plano, timeout=10)
@@ -127,7 +127,7 @@ def consultar_claude(datos_mercado):
         }
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 3500,  # Ajustado para que no exceda los límites de Telegram
+            "max_tokens": 3500,
             "system": (
                 "Eres un analista cuantitativo senior y trader institucional. "
                 "Aplica rigurosamente el protocolo de los 7 filtros a los datos reales que te proporcione el sistema. "
@@ -141,7 +141,8 @@ def consultar_claude(datos_mercado):
             ]
         }
 
-        response = requests.post(url, headers=headers, json=payload, timeout=25)
+        # CORREGIDO: Timeout ampliado a 60s para evitar cortes al generar informes largos
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
         resultado = response.json()
 
         if response.status_code == 200:
@@ -160,24 +161,17 @@ def procesar_analisis_en_segundo_plan(ticker):
         print(f"[{ticker}] Iniciando análisis...")
         enviar_telegram(f"🔍 *Buscando datos de mercado en tiempo real para {ticker}...*")
 
-        print(f"[{ticker}] Pidiendo datos a Twelve Data...")
         datos_tecnicos, error = obtener_datos_mercado(ticker)
-        print(f"[{ticker}] Twelve Data respondió. ¿Falló?: {'Sí -> ' + error if error else 'No, todo OK'}")
 
         if error:
             enviar_telegram(f"❌ {error}")
         else:
             enviar_telegram("⏳ *Aplicando protocolo de 7 filtros y calculando setup...*")
-
-            print(f"[{ticker}] Llamando a Claude...")
             analisis = consultar_claude(datos_tecnicos)
-            print(f"[{ticker}] Claude respondió ({len(analisis)} caracteres).")
-
             enviar_telegram(analisis)
-            print(f"[{ticker}] Análisis enviado a Telegram. Proceso completado.")
+            print(f"[{ticker}] Análisis enviado a Telegram con éxito.")
     except Exception as e:
         import traceback
-        print(f"[{ticker}] EXCEPCIÓN en el hilo: {e}")
         traceback.print_exc()
         enviar_telegram(f"❌ Error inesperado procesando el análisis: {str(e)}")
 
@@ -204,7 +198,7 @@ def recibir_mensaje_telegram():
 
 @app.route('/')
 def inicio():
-    return "¡El bot asíncrono con hilos está encendido!"
+    return "¡El bot asíncrono con límites corregidos está encendido!"
 
 
 if __name__ == '__main__':
