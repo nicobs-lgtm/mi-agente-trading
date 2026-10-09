@@ -60,8 +60,8 @@ def _pedir_twelvedata(endpoint, params):
 def obtener_datos_mercado(ticker_symbol):
     try:
         print(f"[{ticker_symbol}] -> pidiendo /quote")
-        cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "exchange": "NASDAQ"})
-        print(f"[{ticker_symbol}] <- /quote OK")
+cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "country": "United States"})
+print(f"[{ticker_symbol}] <- /quote OK")
         if "close" not in cotizacion:
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
 
@@ -69,7 +69,7 @@ def obtener_datos_mercado(ticker_symbol):
 
         print(f"[{ticker_symbol}] -> pidiendo /time_series (volumen)")
         series_resp = _pedir_twelvedata("time_series", {
-            "symbol": ticker_symbol, "exchange": "NASDAQ",
+"symbol": ticker_symbol, "country": "United States",
             "interval": "1day", "outputsize": 11
         })
         print(f"[{ticker_symbol}] <- /time_series OK")
@@ -90,13 +90,13 @@ def obtener_datos_mercado(ticker_symbol):
         volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
 
         print(f"[{ticker_symbol}] -> pidiendo /sma")
-        sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 50, "outputsize": 1})
-        print(f"[{ticker_symbol}] <- /sma OK")
+sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 50, "outputsize": 1})
+print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
-        rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "exchange": "NASDAQ", "interval": "1day", "time_period": 14, "outputsize": 1})
-        print(f"[{ticker_symbol}] <- /rsi OK")
+rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 14, "outputsize": 1})
+print(f"[{ticker_symbol}] <- /rsi OK")
         rsi_actual = float(rsi_resp["values"][0]["rsi"]) if rsi_resp.get("values") else None
 
         texto_ma_50 = f"${ma_50:.2f}" if ma_50 is not None else "N/D"
