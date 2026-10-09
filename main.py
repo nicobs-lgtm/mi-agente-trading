@@ -14,20 +14,20 @@ TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY")
 def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        
-        # CORREGIDO: Límite seguro por debajo de los 4096 caracteres permitidos por Telegram
+
+        # Límite seguro por debajo de los 4096 caracteres permitidos por Telegram
         limite = 3900
         trozos = [mensaje[i:i+limite] for i in range(0, len(mensaje), limite)]
-        
+
         for parte in trozos:
             datos = {"chat_id": TELEGRAM_CHAT_ID, "text": parte, "parse_mode": "Markdown"}
             resp = requests.post(url, data=datos, timeout=10)
-            
+
             # Si falla por formato Markdown, se reenvía en texto plano
             if resp.status_code != 200:
                 datos_plano = {"chat_id": TELEGRAM_CHAT_ID, "text": parte}
                 requests.post(url, data=datos_plano, timeout=10)
-                
+
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
@@ -60,8 +60,8 @@ def _pedir_twelvedata(endpoint, params):
 def obtener_datos_mercado(ticker_symbol):
     try:
         print(f"[{ticker_symbol}] -> pidiendo /quote")
-cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "country": "United States"})
-print(f"[{ticker_symbol}] <- /quote OK")
+        cotizacion = _pedir_twelvedata("quote", {"symbol": ticker_symbol, "country": "United States"})
+        print(f"[{ticker_symbol}] <- /quote OK")
         if "close" not in cotizacion:
             return None, f"No se han encontrado datos para el ticker '{ticker_symbol}'."
 
@@ -69,7 +69,7 @@ print(f"[{ticker_symbol}] <- /quote OK")
 
         print(f"[{ticker_symbol}] -> pidiendo /time_series (volumen)")
         series_resp = _pedir_twelvedata("time_series", {
-"symbol": ticker_symbol, "country": "United States",
+            "symbol": ticker_symbol, "country": "United States",
             "interval": "1day", "outputsize": 11
         })
         print(f"[{ticker_symbol}] <- /time_series OK")
@@ -90,13 +90,13 @@ print(f"[{ticker_symbol}] <- /quote OK")
         volumen_medio_10d = sum(volumenes_previos) / len(volumenes_previos) if volumenes_previos else 0.0
 
         print(f"[{ticker_symbol}] -> pidiendo /sma")
-sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 50, "outputsize": 1})
-print(f"[{ticker_symbol}] <- /sma OK")
+        sma_resp = _pedir_twelvedata("sma", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 50, "outputsize": 1})
+        print(f"[{ticker_symbol}] <- /sma OK")
         ma_50 = float(sma_resp["values"][0]["sma"]) if sma_resp.get("values") else None
 
         print(f"[{ticker_symbol}] -> pidiendo /rsi")
-rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 14, "outputsize": 1})
-print(f"[{ticker_symbol}] <- /rsi OK")
+        rsi_resp = _pedir_twelvedata("rsi", {"symbol": ticker_symbol, "country": "United States", "interval": "1day", "time_period": 14, "outputsize": 1})
+        print(f"[{ticker_symbol}] <- /rsi OK")
         rsi_actual = float(rsi_resp["values"][0]["rsi"]) if rsi_resp.get("values") else None
 
         texto_ma_50 = f"${ma_50:.2f}" if ma_50 is not None else "N/D"
@@ -141,7 +141,7 @@ def consultar_claude(datos_mercado):
             ]
         }
 
-        # CORREGIDO: Timeout ampliado a 60s para evitar cortes al generar informes largos
+        # Timeout ampliado a 60s para evitar cortes al generar informes largos
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         resultado = response.json()
 
