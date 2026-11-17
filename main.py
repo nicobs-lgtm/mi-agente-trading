@@ -241,10 +241,14 @@ def construir_plan(direccion, precio, atr, sh, sl, ma50):
         if ma50 and ma50 > precio + 0.5 * atr:
             res.append(ma50)
         res = sorted(res)
-        tp1 = res[0] if res else precio + 2.0 * atr
+        lejos = [x for x in res if x - precio >= riesgo]   # TP1 con R:B >= 1
+        saltado = bool(res) and (not lejos or lejos[0] != res[0])
+        tp1 = lejos[0] if lejos else precio + max(2.0 * atr, riesgo)
         sig = [x for x in res if x >= tp1 + 0.75 * atr]
         tp2 = sig[0] if sig else max(tp1 + 1.5 * atr, precio + 3.5 * atr)
         fuente = "resistencias de las velas" if res else "sin resistencia visible (múltiplos de ATR)"
+        if saltado:
+            fuente += " (TP1 más lejos: la resistencia cercana daba R:B < 1)"
     else:
         niveles = [x for x in sh if 0.8 * atr <= x - precio <= 2.5 * atr]
         if niveles:
@@ -256,15 +260,19 @@ def construir_plan(direccion, precio, atr, sh, sl, ma50):
         if ma50 and ma50 < precio - 0.5 * atr:
             sup.append(ma50)
         sup = sorted(sup, reverse=True)
-        tp1 = sup[0] if sup else precio - 2.0 * atr
+        lejos = [x for x in sup if precio - x >= riesgo]   # TP1 con R:B >= 1
+        saltado = bool(sup) and (not lejos or lejos[0] != sup[0])
+        tp1 = lejos[0] if lejos else precio - max(2.0 * atr, riesgo)
         sig = [x for x in sup if x <= tp1 - 0.75 * atr]
         tp2 = sig[0] if sig else min(tp1 - 1.5 * atr, precio - 3.5 * atr)
         fuente = "soportes de las velas" if sup else "sin soporte visible (múltiplos de ATR)"
+        if saltado:
+            fuente += " (TP1 más lejos: el soporte cercano daba R:B < 1)"
     r1 = abs(tp1 - precio) / riesgo if riesgo > 0 else 0.0
     r2 = abs(tp2 - precio) / riesgo if riesgo > 0 else 0.0
     return {
         "entrada": precio, "stop": stop, "riesgo": riesgo,
-        "tp1": tp1, "tp2": tp2, "rb1": r1, "rb2": r2, "fuente": fuente,
+        "tp1": tp1, "tp2": tp2, "rb1": r1, "rb2": r2, "fuente": fuente, "saltado": saltado,
     }
 
 
@@ -322,6 +330,11 @@ def puntuar(direccion, ctx, plan, hoy_entrada, resultados):
         factores.append((3, f"TP2 con R:B 1:{plan['rb2']:.2f}"))
     else:
         factores.append((0, f"TP2 con R:B 1:{plan['rb2']:.2f} (sin llegar a 2,5)"))
+
+    # TP1 desplazado: una resistencia/soporte cercano queda entre la entrada y el objetivo
+    if plan.get("saltado"):
+        puntos -= 3
+        factores.append((-3, "TP1 desplazado: hay un nivel cercano que puede frenar el precio antes"))
 
     # Volumen
     if vol >= 1.0:
