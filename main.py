@@ -32,6 +32,7 @@ CAPITAL = float(os.environ.get("CAPITAL", "5000"))        # por operación (se t
 UMBRAL = float(os.environ.get("UMBRAL", "60"))            # % mínimo para aprobar
 PAUSA_SCAN = float(os.environ.get("PAUSA_SCAN", "25"))    # segundos entre tickers (límite de Twelve Data)
 PAIS = os.environ.get("PAIS", "United States")
+FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "")      # opcional: calendario de resultados gratuito (finnhub.io)
 
 WATCHLIST = [t.strip().upper() for t in os.environ.get(
     "WATCHLIST",
@@ -112,6 +113,13 @@ def siguiente_laborable(d):
     d = d + timedelta(days=1)
     while not es_laborable(d):
         d += timedelta(days=1)
+    return d
+
+
+def anterior_laborable(d):
+    d = d - timedelta(days=1)
+    while not es_laborable(d):
+        d -= timedelta(days=1)
     return d
 
 
@@ -198,25 +206,42 @@ def swings(altos, bajos, k=3, ventana=60):
 # ----------------------------------------------------------------------------
 # Resultados de la empresa
 # ----------------------------------------------------------------------------
-def buscar_resultados(ticker, hoy):
-    """Devuelve (fecha | None, estado) con estado: manual / confirmada / estimada / desconocida."""
-    if ticker in EARNINGS_OVERRIDES:
-        return EARNINGS_OVERRIDES[ticker], "manual"
+def _fechas_finnhub(ticker, hoy):
+    if not FINNHUB_KEY:
+        return []
+    try:
+        r = requests.get("https://finnhub.io/api/v1/calendar/earnings", params={
+            "symbol": ticker, "from": (hoy - timedelta(days=100)).isoformat(),
+            "to": (hoy + timedelta(days=200)).isoformat(), "token": FINNHUB_KEY}, timeout=15).json()
+        return [date.fromisoformat(str(x["date"])[:10]) for x in (r.get("earningsCalendar") or []) if x.get("date")]
+    except Exception:
+        return []
+
+
+def _fechas_twelvedata(ticker):
     try:
         data = td_get("earnings", {"symbol": ticker, "country": PAIS, "outputsize": 12})
     except Exception:
-        return None, "desconocida"
-    lista = []
-    if isinstance(data, dict):
-        lista = data.get("earnings") or data.get("values") or []
-    fechas = []
+        return []
+    lista = data.get("earnings") or data.get("values") or [] if isinstance(data, dict) else []
+    out = []
     for item in lista:
         try:
-            fechas.append(date.fromisoformat(str(item.get("date"))[:10]))
+            out.append(date.fromisoformat(str(item.get("date"))[:10]))
         except Exception:
             continue
-    futuras = [f for f in fechas if f >= hoy]
-    pasadas = [f for f in fechas if f < hoy]
+    return out
+
+
+def buscar_resultados(ticker, hoy):
+    """Devuelve (fecha | None, estado) con estado: manual / confirmada / estimada / desconocida.
+    Orden de fuentes: tu variable EARNINGS_OVERRIDES > Finnhub (si hay clave) > Twelve Data."""
+    if ticker in EARNINGS_OVERRIDES:
+        return EARNINGS_OVERRIDES[ticker], "manual"
+    fechas = _fechas_finnhub(ticker, hoy) or _fechas_twelvedata(ticker)
+    corte = anterior_laborable(hoy)     # incluye ayer: si presentaron tras el cierre, la reacción es hoy
+    futuras = [f for f in fechas if f >= corte]
+    pasadas = [f for f in fechas if f < corte]
     if futuras:
         return min(futuras), "confirmada"
     if pasadas:
@@ -285,69 +310,74 @@ def puntuar(direccion, ctx, plan, hoy_entrada, resultados):
     precio, ma50, rsi, vol = ctx["precio"], ctx["ma50"], ctx["rsi"], ctx["vol_ratio"]
     puntos = 45.0
     factores = [(45, "base: acierto real sept-nov (8/18)")]
+    # (los puntos de cada factor se suman a la base; resultados al final)
 
-    # Tendencia
+    def anotar(pts, texto):
+        nonlocal puntos
+        puntos += pts
+        factores.append((round(pts, 1), texto))
+
+    # Tendencia (continua: cuanto más separada de la MM50, más puntos; demasiado estirada resta)
     a_favor = (precio > ma50) if es_long else (precio < ma50)
     dist = abs(precio / ma50 - 1) * 100
+    lado = ("sobre" if es_long else "bajo") if a_favor else ("bajo" if es_long else "sobre")
     if a_favor:
-        puntos += 5
-        factores.append((5, f"a favor de la tendencia ({dist:.1f}% {'sobre' if es_long else 'bajo'} la MM50)"))
+        pts = min(8.0, 1.5 + dist * 1.2)
+        if dist > 12:
+            pts -= 4
+        anotar(pts, f"a favor de la tendencia ({dist:.1f}% {lado} la MM50)")
     else:
-        puntos -= 8
-        factores.append((-8, f"contra la tendencia ({dist:.1f}% {'bajo' if es_long else 'sobre'} la MM50)"))
+        anotar(-8 - min(4.0, dist * 0.5), f"contra la tendencia ({dist:.1f}% {lado} la MM50)")
 
-    # RSI
-    sano = (45 <= rsi <= 65) if es_long else (35 <= rsi <= 55)
-    if sano:
-        puntos += 3
-        factores.append((3, f"RSI {rsi:.1f} en zona sana"))
+    # Pendiente de la MM50 (últimas 10 sesiones)
+    slope = ctx.get("slope")
+    if slope is not None:
+        anotar(max(-3.0, min(3.0, (slope if es_long else -slope))), f"pendiente MM50 {slope:+.1f}% en 10 sesiones")
+
+    # Fuerza relativa frente al S&P 500 (20 sesiones)
+    rs = ctx.get("rs")
+    if rs is not None:
+        anotar(max(-3.0, min(3.0, (rs if es_long else -rs) * 0.3)), f"fuerza relativa vs S&P 500 {rs:+.1f} pts (20 ses.)")
+
+    # RSI (continuo: centro 55 en largos, 45 en cortos; extremos restan)
+    d = abs(rsi - (55 if es_long else 45))
+    if d <= 10:
+        pr = 4 - d * 0.2
+    elif d <= 20:
+        pr = 2 - (d - 10) * 0.4
     else:
-        factores.append((0, f"RSI {rsi:.1f} fuera de la zona sana"))
+        pr = -4
+    anotar(pr, f"RSI {rsi:.1f}")
 
-    # Distancia del stop
+    # Stop: ni pegado (se lo come el ruido) ni lejísimos (pérdida enorme en $)
     pct_stop = plan["riesgo"] / precio * 100
-    if pct_stop >= 1.5:
-        puntos += 3
-        factores.append((3, f"stop a {pct_stop:.1f}% de la entrada"))
-    elif pct_stop < 1.0:
-        puntos -= 5
-        factores.append((-5, f"stop muy ajustado ({pct_stop:.1f}%)"))
+    if pct_stop < 1.0:
+        anotar(-5, f"stop muy ajustado ({pct_stop:.1f}%)")
+    elif pct_stop <= 5.0:
+        anotar(2, f"stop a {pct_stop:.1f}% de la entrada")
+    elif pct_stop <= 8.0:
+        anotar(0, f"stop a {pct_stop:.1f}% de la entrada")
     else:
-        factores.append((0, f"stop a {pct_stop:.1f}% de la entrada"))
+        anotar(-min(5.0, (pct_stop - 8.0) * 0.8), f"stop muy lejano ({pct_stop:.1f}%): pérdida grande en $")
 
-    # R:B
-    if plan["rb1"] >= 1.5:
-        puntos += 4
-        factores.append((4, f"TP1 con R:B 1:{plan['rb1']:.2f}"))
-    elif plan["rb1"] >= 1.0:
-        puntos += 2
-        factores.append((2, f"TP1 con R:B 1:{plan['rb1']:.2f}"))
-    else:
-        puntos -= 5
-        factores.append((-5, f"TP1 con R:B 1:{plan['rb1']:.2f} (por debajo de 1)"))
-    if plan["rb2"] >= 2.5:
-        puntos += 3
-        factores.append((3, f"TP2 con R:B 1:{plan['rb2']:.2f}"))
-    else:
-        factores.append((0, f"TP2 con R:B 1:{plan['rb2']:.2f} (sin llegar a 2,5)"))
-
-    # TP1 desplazado: una resistencia/soporte cercano queda entre la entrada y el objetivo
+    # R:B ponderado 50/50 (continuo) y TP1 por debajo de 1
+    rbp = (plan["rb1"] + plan["rb2"]) / 2
+    anotar(max(-6.0, min(6.0, (rbp - 1.2) * 4)), f"R:B ponderado 1:{rbp:.2f} (TP1 1:{plan['rb1']:.2f} · TP2 1:{plan['rb2']:.2f})")
+    if plan["rb1"] < 1.0:
+        anotar(-5, f"TP1 con R:B 1:{plan['rb1']:.2f} (por debajo de 1)")
     if plan.get("saltado"):
-        puntos -= 3
-        factores.append((-3, "TP1 desplazado: hay un nivel cercano que puede frenar el precio antes"))
+        anotar(-2, "TP1 desplazado: hay un nivel cercano que puede frenar el precio antes")
 
-    # Volumen
-    if vol >= 1.0:
-        puntos += 2
-        factores.append((2, f"volumen {vol:.2f}x la media"))
+    # Volumen (continuo; un volumen anómalo > 2,5x no se premia: puede ser noticia o evento)
+    if vol > 2.5:
+        anotar(0, f"volumen {vol:.2f}x la media (anómalo: mira si hay noticia)")
     else:
-        factores.append((0, f"volumen {vol:.2f}x la media"))
+        anotar(max(-2.0, min(2.0, (vol - 1.0) * 3)), f"volumen {vol:.2f}x la media")
 
     # Gap típico
     gap_usd = ctx["gap_p90"] * precio
     if gap_usd > 0.6 * plan["riesgo"]:
-        puntos -= 3
-        factores.append((-3, f"el stop no cubre un gap típico (p90 {ctx['gap_p90'] * 100:.1f}%)"))
+        anotar(-3, f"el stop no cubre un gap típico (p90 {ctx['gap_p90'] * 100:.1f}%)")
 
     # Resultados
     fecha_res, estado = resultados
@@ -359,7 +389,8 @@ def puntuar(direccion, ctx, plan, hoy_entrada, resultados):
         if estado == "estimada":
             en_ventana = (hoy_entrada - timedelta(days=5)) <= fecha_res <= (limite_plan + timedelta(days=7))
         else:
-            en_ventana = hoy_entrada <= fecha_res <= limite_plan
+            # incluye el día laborable anterior: si presentan tras el cierre, la reacción cae en el día de entrada
+            en_ventana = anterior_laborable(hoy_entrada) <= fecha_res <= limite_plan
         if en_ventana:
             puntos -= 10
             veto = f"resultados {etiqueta} el {fecha_res.strftime('%d/%m/%Y')}, dentro del plazo"
@@ -373,7 +404,8 @@ def puntuar(direccion, ctx, plan, hoy_entrada, resultados):
             aviso = "fecha de resultados ESTIMADA, no confirmada: compruébala"
     else:
         aviso = "fecha de resultados NO verificada: compruébala (máximo 59 %)"
-        factores.append((0, "resultados no verificados"))
+        puntos -= 2
+        factores.append((-2, "resultados no verificados"))
 
     puntos = min(puntos, 70.0)
     if fecha_res is None:
@@ -384,6 +416,23 @@ def puntuar(direccion, ctx, plan, hoy_entrada, resultados):
 # ----------------------------------------------------------------------------
 # Análisis completo de un ticker
 # ----------------------------------------------------------------------------
+_spy_cache = {"t": 0.0, "datos": None}
+
+
+def spy_cierres():
+    """Cierres diarios del S&P 500 (SPY) por fecha; se cachea 6 horas para no gastar llamadas."""
+    if _spy_cache["datos"] and time.time() - _spy_cache["t"] < 6 * 3600:
+        return _spy_cache["datos"]
+    try:
+        ts = td_get("time_series", {"symbol": "SPY", "country": PAIS, "interval": "1day", "outputsize": 40})
+        datos = {v["datetime"][:10]: float(v["close"]) for v in ts.get("values", [])}
+        if datos:
+            _spy_cache.update(t=time.time(), datos=datos)
+        return datos or None
+    except Exception:
+        return _spy_cache["datos"]
+
+
 def analizar(ticker):
     cot = td_get("quote", {"symbol": ticker, "country": PAIS})
     if "close" not in cot:
@@ -418,7 +467,17 @@ def analizar(ticker):
     hoy_entrada = dia_de_entrada()
     resultados = buscar_resultados(ticker, hoy_entrada)
 
-    ctx = {"precio": precio, "ma50": ma50, "rsi": rsi, "vol_ratio": vol_ratio, "gap_p90": gap_p90, "atr": atr}
+    ma50_ant = sma(ci[:-10], 50)
+    slope = (ma50 / ma50_ant - 1) * 100 if ma50_ant else None
+    rs = None
+    if len(cerradas) > 21:
+        spy = spy_cierres()
+        f_fin, f_ini = cerradas[-1]["datetime"][:10], cerradas[-21]["datetime"][:10]
+        if spy and f_fin in spy and f_ini in spy:
+            rs = ((ci[-1] / ci[-21] - 1) - (spy[f_fin] / spy[f_ini] - 1)) * 100
+
+    ctx = {"precio": precio, "ma50": ma50, "rsi": rsi, "vol_ratio": vol_ratio, "gap_p90": gap_p90,
+           "atr": atr, "slope": slope, "rs": rs}
     opciones = []
     for direccion in ("LONG", "SHORT"):
         plan = construir_plan(direccion, precio, atr, sh, sl, ma50)
@@ -485,7 +544,7 @@ def tarjeta(r, detalle=True):
     sesion = "sesión abierta" if r["abierto"] else "sesión cerrada"
     lineas.append(f"Niveles: {p['fuente']} · última vela cerrada {r['fecha_dato']} ({sesion})")
     if detalle:
-        lineas.append("Por qué: " + " · ".join(f"{pts:+d} {txt}" if pts else f"0 {txt}" for pts, txt in m["factores"]))
+        lineas.append("Por qué: " + " · ".join(f"{pts:+.1f} {txt}" for pts, txt in m["factores"]))
     return "\n".join(lineas)
 
 
@@ -516,6 +575,9 @@ def escanear(lista):
             resumen.append("🟡 En vigilancia (50-59%): " + ", ".join(vigilar))
         if vetadas:
             resumen.append("⛔ Vetados por resultados: " + ", ".join(vetadas))
+        ranking = sorted([r for r in resultados if r["estado"] != "VETADA"], key=lambda r: -r["mejor"]["pct"])[:5]
+        if ranking:
+            resumen.append("🏆 Ranking: " + " · ".join(f"{r['ticker']} {r['mejor']['dir']} {r['mejor']['pct']}%" for r in ranking))
         if errores:
             resumen.append("⚠️ Con error: " + " | ".join(errores))
         enviar_telegram("\n".join(resumen))
